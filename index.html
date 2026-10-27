@@ -114,6 +114,34 @@
   }
   footer button.primary { background: var(--accent); color: #fff; }
   footer button:disabled { opacity: .4; }
+
+  .overlay {
+    position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.55);
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .overlay[hidden] { display: none; }
+  .sheet {
+    background: var(--card); width: 100%; max-width: 640px; border-radius: 18px 18px 0 0;
+    padding: 18px 16px calc(16px + env(safe-area-inset-bottom));
+    max-height: 92vh; overflow-y: auto;
+  }
+  .sheet h3 { margin: 0 0 6px; font-size: 19px; }
+  .sheet p { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
+  #reader { width: 100%; border-radius: 12px; overflow: hidden; background: #000; min-height: 220px; }
+  #reader video { display: block; width: 100% !important; }
+  .sheet input {
+    width: 100%; font: inherit; padding: 11px 12px; border-radius: 10px;
+    border: 1.5px solid var(--line); background: var(--bg); color: var(--text); margin-bottom: 14px;
+  }
+  .sheet label { display: block; font-size: 14px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+  .sheet .chips { margin-bottom: 16px; }
+  .sheet .row { display: flex; gap: 10px; }
+  .sheet .row button {
+    flex: 1; border: 0; border-radius: 12px; padding: 13px;
+    font: inherit; font-weight: 600; background: var(--chip); color: var(--text);
+  }
+  .sheet .row button.primary { background: var(--accent); color: #fff; }
+  .sheet .row button:disabled { opacity: .4; }
 </style>
 </head>
 <body>
@@ -125,6 +153,7 @@
 </header>
 <main id="main"></main>
 <footer id="footer"></footer>
+<div class="overlay" id="overlay" hidden><div class="sheet" id="sheet"></div></div>
 
 <script>
 const KEY = "einkauf-rewe-v1";
@@ -209,7 +238,8 @@ function renderPlan() {
   $("footer").innerHTML = editing
     ? `<button id="btnEdit" class="primary">Fertig</button>`
     : `<button id="btnEdit">Bearbeiten</button>
-       <button id="btnClear" ${any ? "" : "disabled"}>Alles abwählen</button>`;
+       <button id="btnScan" class="primary">Scannen</button>
+       <button id="btnClear" ${any ? "" : "disabled"}>Abwählen</button>`;
 }
 
 function renderShop() {
@@ -258,6 +288,8 @@ document.addEventListener("click", e => {
     if (!needed().length) view = "plan";
   }
   else if (t.id === "btnShare") { share(); return; }
+  else if (t.id === "btnScan") { startScan(); return; }
+  else if (t.closest("#overlay")) return;
   else if (t.dataset.item) {
     const [c, i] = findItem(t.dataset.item);
     if (!i) return;
@@ -298,6 +330,118 @@ async function share() {
     if (navigator.share) await navigator.share({ title: "Einkaufsliste", text });
     else { await navigator.clipboard.writeText(text); alert("Liste in die Zwischenablage kopiert."); }
   } catch (e) {}
+}
+
+// ---- Barcode-Scanner ----
+const SCANNER_URL = "https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js";
+let scanner = null;
+
+function loadScript(src) {
+  return new Promise((ok, fail) => {
+    if (window.Html5Qrcode) return ok();
+    const s = document.createElement("script");
+    s.src = src; s.onload = ok; s.onerror = fail;
+    document.head.appendChild(s);
+  });
+}
+
+function openSheet(html) {
+  $("sheet").innerHTML = html;
+  $("overlay").hidden = false;
+}
+async function closeSheet() {
+  $("overlay").hidden = true;
+  await stopScanner();
+  if ($("overlay").hidden) $("sheet").innerHTML = "";
+}
+async function stopScanner() {
+  if (!scanner) return;
+  const s = scanner;
+  scanner = null;
+  try { await s.stop(); } catch (e) {}
+  try { s.clear(); } catch (e) {}
+}
+
+async function startScan() {
+  openSheet(`<h3>Barcode scannen</h3>
+    <p>Halte die Kamera auf den Strichcode der Verpackung.</p>
+    <div id="reader"></div>
+    <div class="row" style="margin-top:14px"><button id="scanCancel">Abbrechen</button></div>`);
+  $("scanCancel").onclick = closeSheet;
+  try {
+    await loadScript(SCANNER_URL);
+    const F = Html5QrcodeSupportedFormats;
+    scanner = new Html5Qrcode("reader", {
+      verbose: false,
+      formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E],
+      experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+    });
+    await scanner.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: (w, h) => ({ width: Math.min(w * 0.85, 320), height: Math.min(h * 0.45, 140) }) },
+      code => { if (!scanner) return; stopScanner(); onCode(code); },
+      () => {}
+    );
+  } catch (e) {
+    scanner = null;
+    $("reader").outerHTML = `<p>Die Kamera konnte nicht gestartet werden. Bitte den Kamerazugriff erlauben und es erneut versuchen.</p>`;
+  }
+}
+
+async function onCode(code) {
+  // Schon bekannt? Dann nur auf die Liste setzen.
+  for (const c of state.cats) {
+    const i = c.items.find(i => i.code === code);
+    if (i) {
+      i.need = true; i.done = false;
+      save(); render();
+      openSheet(`<h3>${esc(i.name)}</h3><p>Steht jetzt auf der Liste (${esc(c.name)}).</p>
+        <div class="row"><button id="again">Weiter scannen</button><button id="ok" class="primary">Fertig</button></div>`);
+      $("again").onclick = startScan;
+      $("ok").onclick = closeSheet;
+      return;
+    }
+  }
+
+  openSheet(`<h3>Produkt wird gesucht …</h3><p>Barcode ${esc(code)}</p>`);
+  let name = "";
+  try {
+    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name_de,product_name,brands`);
+    const d = await r.json();
+    const p = d.product || {};
+    name = (p.product_name_de || p.product_name || (p.brands || "").split(",")[0] || "").trim();
+  } catch (e) {}
+  askDetails(code, name);
+}
+
+function askDetails(code, name) {
+  let catId = null;
+  openSheet(`<h3>${name ? "Produkt gefunden" : "Produkt nicht gefunden"}</h3>
+    <p>${name ? "Name bei Bedarf anpassen und Bereich wählen." : "Bitte Namen eingeben und Bereich wählen."}</p>
+    <label for="newName">Name</label>
+    <input id="newName" value="${esc(name)}" placeholder="z. B. Joghurt mild" autocomplete="off">
+    <label>Bereich im Laden</label>
+    <div class="chips" id="catChoice">${state.cats.map((c, idx) =>
+      `<button class="chip" data-cat="${c.id}">${idx + 1}. ${esc(c.name)}</button>`).join("")}</div>
+    <div class="row"><button id="cancel">Abbrechen</button><button id="add" class="primary" disabled>Hinzufügen</button></div>`);
+
+  const check = () => { $("add").disabled = !catId || !$("newName").value.trim(); };
+  $("newName").oninput = check;
+  $("catChoice").onclick = e => {
+    const b = e.target.closest("[data-cat]");
+    if (!b) return;
+    catId = b.dataset.cat;
+    $("catChoice").querySelectorAll(".chip").forEach(x => x.classList.toggle("on", x === b));
+    check();
+  };
+  $("cancel").onclick = closeSheet;
+  $("add").onclick = () => {
+    const c = state.cats.find(c => c.id === catId);
+    c.items.push({ id: newId(), name: $("newName").value.trim(), code, need: true, done: false });
+    save(); render();
+    closeSheet();
+  };
+  if (!name) $("newName").focus();
 }
 
 render();
