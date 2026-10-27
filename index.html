@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Einkauf">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#cc071e">
+<title>Einkauf</title>
+<style>
+  :root {
+    --bg: #f4f4f2;
+    --card: #ffffff;
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --line: #e2e2e0;
+    --accent: #cc071e;
+    --accent-soft: #fde8ea;
+    --ok: #1f8a4c;
+    --chip: #f0f0ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111113;
+      --card: #1c1c1f;
+      --text: #f2f2f4;
+      --muted: #9a9aa0;
+      --line: #2e2e33;
+      --accent: #ff4d5e;
+      --accent-soft: #3a1a1e;
+      --ok: #4cc47e;
+      --chip: #2a2a2e;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding-bottom: calc(90px + env(safe-area-inset-bottom));
+  }
+  header {
+    position: sticky; top: 0; z-index: 5;
+    background: var(--bg);
+    padding: calc(12px + env(safe-area-inset-top)) 16px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .tabs { display: flex; background: var(--chip); border-radius: 10px; padding: 3px; }
+  .tabs button {
+    flex: 1; border: 0; background: none; color: var(--text);
+    font: inherit; font-weight: 600; padding: 8px; border-radius: 8px;
+  }
+  .tabs button.active { background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  .tabs .count {
+    display: inline-block; min-width: 22px; padding: 0 6px; margin-left: 4px;
+    border-radius: 11px; background: var(--accent); color: #fff; font-size: 13px; line-height: 22px;
+  }
+  main { padding: 12px 16px; max-width: 640px; margin: 0 auto; }
+  section.cat {
+    background: var(--card); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px;
+  }
+  .cat h2 {
+    margin: 0 0 10px; font-size: 15px; font-weight: 700; color: var(--muted);
+    display: flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: .03em;
+  }
+  .cat h2 .num {
+    display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+    background: var(--accent); color: #fff; font-size: 13px; letter-spacing: 0;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    border: 1.5px solid transparent; background: var(--chip); color: var(--text);
+    font: inherit; font-size: 16px; padding: 8px 14px; border-radius: 20px;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .chip.add { background: none; border: 1.5px dashed var(--line); color: var(--muted); }
+  .chip .x { font-weight: 700; color: var(--accent); margin-left: 2px; }
+  .editing .chip:not(.add) { animation: wiggle .3s ease-in-out infinite alternate; }
+  @keyframes wiggle { from { transform: rotate(-1deg); } to { transform: rotate(1deg); } }
+
+  ul.shop { list-style: none; margin: 0; padding: 0; }
+  ul.shop li {
+    display: flex; align-items: center; gap: 12px; padding: 11px 0;
+    border-top: 1px solid var(--line); font-size: 18px; cursor: pointer; user-select: none;
+  }
+  ul.shop li:first-child { border-top: 0; padding-top: 2px; }
+  .box {
+    flex: none; width: 26px; height: 26px; border-radius: 50%;
+    border: 2px solid var(--muted); display: grid; place-items: center;
+  }
+  li.done { color: var(--muted); text-decoration: line-through; }
+  li.done .box { background: var(--ok); border-color: var(--ok); }
+  li.done .box::after { content: "✓"; color: #fff; font-size: 15px; font-weight: 700; }
+  section.cat.complete { opacity: .5; }
+
+  .empty { text-align: center; color: var(--muted); padding: 48px 16px; }
+  .progress { height: 6px; background: var(--chip); border-radius: 3px; overflow: hidden; margin: 2px 0 14px; }
+  .progress div { height: 100%; background: var(--ok); transition: width .2s; }
+  .hint { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+
+  footer {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+    background: var(--bg); border-top: 1px solid var(--line);
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    display: flex; gap: 10px; justify-content: center;
+  }
+  footer button {
+    flex: 1; max-width: 300px; border: 0; border-radius: 12px; padding: 13px;
+    font: inherit; font-weight: 600; background: var(--chip); color: var(--text);
+  }
+  footer button.primary { background: var(--accent); color: #fff; }
+  footer button:disabled { opacity: .4; }
+</style>
+</head>
+<body>
+<header>
+  <div class="tabs">
+    <button id="tabPlan" class="active">Planen</button>
+    <button id="tabShop">Einkaufen <span class="count" id="count" hidden></span></button>
+  </div>
+</header>
+<main id="main"></main>
+<footer id="footer"></footer>
+
+<script>
+const KEY = "einkauf-rewe-v1";
+
+// Reihenfolge im Laden – hier Kategorien und Startartikel anpassen
+const DEFAULT = [
+  ["Brötchen", ["Brötchen", "Körnerbrötchen"]],
+  ["Obst & Gemüse", ["Äpfel", "Bananen", "Tomaten", "Gurke", "Salat", "Kartoffeln", "Zwiebeln"]],
+  ["Toastbrot & Kühlregal", ["Toastbrot", "Butter", "Joghurt", "Kräuterquark", "Milch"]],
+  ["Frühstück & Kaffee", ["Eier", "Kaffee", "Kaffeemilch", "Kaffeefilter", "Marmelade"]],
+  ["Fleischtheke", ["Beinscheibe", "Aufschnitt"]],
+  ["Käse", ["Gouda", "Frischkäse"]],
+  ["Konserven & Teigwaren", ["Nudeln", "Reis", "Dosentomaten", "Suppe"]],
+  ["Haushalt", ["Spülmittel", "Küchenrolle", "Toilettenpapier", "Müllbeutel"]],
+  ["Hygiene & Nahrungsergänzung", ["Zahnpasta", "Duschgel", "Taschentücher", "Vitamine"]],
+  ["Tiefkühl", ["Gemüse TK", "Fisch TK"]],
+];
+
+let uid = Date.now();
+const newId = () => (uid++).toString(36);
+
+function fresh() {
+  return { cats: DEFAULT.map(([name, items]) => ({
+    id: newId(), name,
+    items: items.map(n => ({ id: newId(), name: n, need: false, done: false })),
+  })) };
+}
+
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY));
+    if (s && Array.isArray(s.cats)) return s;
+  } catch (e) {}
+  return fresh();
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+}
+
+let state = load();
+let view = "plan";
+let editing = false;
+
+const $ = id => document.getElementById(id);
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const needed = () => state.cats.flatMap(c => c.items.filter(i => i.need));
+
+function findItem(id) {
+  for (const c of state.cats) {
+    const i = c.items.find(i => i.id === id);
+    if (i) return [c, i];
+  }
+  return [];
+}
+
+function render() {
+  $("tabPlan").classList.toggle("active", view === "plan");
+  $("tabShop").classList.toggle("active", view === "shop");
+  const n = needed().filter(i => !i.done).length;
+  $("count").hidden = n === 0;
+  $("count").textContent = n;
+  view === "plan" ? renderPlan() : renderShop();
+}
+
+function renderPlan() {
+  let html = `<p class="hint">${editing
+    ? "Tippe auf einen Artikel, um ihn zu löschen."
+    : "Tippe an, was gebraucht wird. „+“ fügt neue Artikel hinzu."}</p>`;
+  html += `<div class="${editing ? "editing" : ""}">`;
+  state.cats.forEach((c, idx) => {
+    html += `<section class="cat"><h2><span class="num">${idx + 1}</span>${esc(c.name)}</h2><div class="chips">`;
+    for (const i of c.items) {
+      html += `<button class="chip ${i.need ? "on" : ""}" data-item="${i.id}">${esc(i.name)}${editing ? '<span class="x">×</span>' : ""}</button>`;
+    }
+    if (!editing) html += `<button class="chip add" data-add="${c.id}">+</button>`;
+    html += `</div></section>`;
+  });
+  html += `</div>`;
+  $("main").innerHTML = html;
+
+  const any = needed().length > 0;
+  $("footer").innerHTML = editing
+    ? `<button id="btnEdit" class="primary">Fertig</button>`
+    : `<button id="btnEdit">Bearbeiten</button>
+       <button id="btnClear" ${any ? "" : "disabled"}>Alles abwählen</button>`;
+}
+
+function renderShop() {
+  const list = needed();
+  if (!list.length) {
+    $("main").innerHTML = `<div class="empty">Noch nichts ausgewählt.<br>Wechsle zu <b>Planen</b> und tippe die benötigten Sachen an.</div>`;
+    $("footer").innerHTML = "";
+    return;
+  }
+  const done = list.filter(i => i.done).length;
+  let html = `<div class="progress"><div style="width:${(done / list.length) * 100}%"></div></div>`;
+  state.cats.forEach((c, idx) => {
+    const items = c.items.filter(i => i.need);
+    if (!items.length) return;
+    const complete = items.every(i => i.done);
+    html += `<section class="cat ${complete ? "complete" : ""}"><h2><span class="num">${idx + 1}</span>${esc(c.name)}</h2><ul class="shop">`;
+    for (const i of items) {
+      html += `<li class="${i.done ? "done" : ""}" data-check="${i.id}"><span class="box"></span>${esc(i.name)}</li>`;
+    }
+    html += `</ul></section>`;
+  });
+  $("main").innerHTML = html;
+  $("footer").innerHTML =
+    `<button id="btnShare">Teilen</button>
+     <button id="btnFinish" class="primary" ${done ? "" : "disabled"}>Abschließen</button>`;
+}
+
+document.addEventListener("click", e => {
+  const t = e.target.closest("button, li");
+  if (!t) return;
+
+  if (t.id === "tabPlan") { view = "plan"; editing = false; }
+  else if (t.id === "tabShop") { view = "shop"; editing = false; }
+  else if (t.id === "btnEdit") { editing = !editing; }
+  else if (t.id === "btnClear") {
+    if (!confirm("Alle Artikel abwählen?")) return;
+    needed().forEach(i => { i.need = false; i.done = false; });
+  }
+  else if (t.id === "btnFinish") {
+    const open = needed().filter(i => !i.done).length;
+    const msg = open
+      ? `Eingekaufte Artikel von der Liste nehmen? ${open} nicht abgehakte Artikel bleiben stehen.`
+      : "Einkauf abschließen und Liste leeren?";
+    if (!confirm(msg)) return;
+    needed().forEach(i => { if (i.done) { i.need = false; i.done = false; } });
+    if (!needed().length) view = "plan";
+  }
+  else if (t.id === "btnShare") { share(); return; }
+  else if (t.dataset.item) {
+    const [c, i] = findItem(t.dataset.item);
+    if (!i) return;
+    if (editing) {
+      if (!confirm(`„${i.name}“ dauerhaft löschen?`)) return;
+      c.items = c.items.filter(x => x !== i);
+    } else {
+      i.need = !i.need;
+      i.done = false;
+    }
+  }
+  else if (t.dataset.add) {
+    const c = state.cats.find(c => c.id === t.dataset.add);
+    const name = (prompt(`Neuer Artikel für „${c.name}“:`) || "").trim();
+    if (!name) return;
+    c.items.push({ id: newId(), name, need: true, done: false });
+  }
+  else if (t.dataset.check) {
+    const [, i] = findItem(t.dataset.check);
+    if (!i) return;
+    i.done = !i.done;
+  }
+  else return;
+
+  save();
+  render();
+  if (t.id === "tabPlan" || t.id === "tabShop") scrollTo(0, 0);
+});
+
+async function share() {
+  const text = state.cats
+    .map(c => [c.name, c.items.filter(i => i.need && !i.done)])
+    .filter(([, items]) => items.length)
+    .map(([name, items]) => `${name}:\n` + items.map(i => `– ${i.name}`).join("\n"))
+    .join("\n\n");
+  if (!text) { alert("Alles erledigt – nichts mehr zu teilen."); return; }
+  try {
+    if (navigator.share) await navigator.share({ title: "Einkaufsliste", text });
+    else { await navigator.clipboard.writeText(text); alert("Liste in die Zwischenablage kopiert."); }
+  } catch (e) {}
+}
+
+render();
+</script>
+</body>
+</html>
