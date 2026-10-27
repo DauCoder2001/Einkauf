@@ -53,6 +53,7 @@
     flex: 1; border: 0; background: none; color: var(--text);
     font: inherit; font-weight: 600; padding: 8px; border-radius: 8px;
   }
+  .tabs .count[hidden] { display: none; }
   .tabs button.active { background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
   .tabs .count {
     display: inline-block; min-width: 22px; padding: 0 6px; margin-left: 4px;
@@ -96,6 +97,13 @@
   li.done .box { background: var(--ok); border-color: var(--ok); }
   li.done .box::after { content: "✓"; color: #fff; font-size: 15px; font-weight: 700; }
   section.cat.complete { opacity: .5; }
+
+  ul.todo li { cursor: default; align-items: flex-start; }
+  ul.todo .box { cursor: pointer; margin-top: 1px; }
+  ul.todo .txt { flex: 1; cursor: pointer; }
+  ul.todo .meta { display: block; font-size: 14px; color: var(--muted); text-decoration: none; }
+  ul.todo .meta.late { color: var(--accent); font-weight: 600; }
+  ul.todo .meta.soon { color: var(--text); font-weight: 600; }
 
   .empty { text-align: center; color: var(--muted); padding: 48px 16px; }
   .progress { height: 6px; background: var(--chip); border-radius: 3px; overflow: hidden; margin: 2px 0 14px; }
@@ -149,6 +157,7 @@
   <div class="tabs">
     <button id="tabPlan" class="active">Planen</button>
     <button id="tabShop">Einkaufen <span class="count" id="count" hidden></span></button>
+    <button id="tabTodo">Aufgaben <span class="count" id="todoCount" hidden></span></button>
   </div>
 </header>
 <main id="main"></main>
@@ -176,16 +185,22 @@ let uid = Date.now();
 const newId = () => (uid++).toString(36);
 
 function fresh() {
-  return { cats: DEFAULT.map(([name, items]) => ({
-    id: newId(), name,
-    items: items.map(n => ({ id: newId(), name: n, need: false, done: false })),
-  })) };
+  return {
+    cats: DEFAULT.map(([name, items]) => ({
+      id: newId(), name,
+      items: items.map(n => ({ id: newId(), name: n, need: false, done: false })),
+    })),
+    todos: [],
+  };
 }
 
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && Array.isArray(s.cats)) return s;
+    if (s && Array.isArray(s.cats)) {
+      if (!Array.isArray(s.todos)) s.todos = [];
+      return s;
+    }
   } catch (e) {}
   return fresh();
 }
@@ -212,10 +227,16 @@ function findItem(id) {
 function render() {
   $("tabPlan").classList.toggle("active", view === "plan");
   $("tabShop").classList.toggle("active", view === "shop");
+  $("tabTodo").classList.toggle("active", view === "todo");
   const n = needed().filter(i => !i.done).length;
   $("count").hidden = n === 0;
   $("count").textContent = n;
-  view === "plan" ? renderPlan() : renderShop();
+  const t = todosDue();
+  $("todoCount").hidden = t === 0;
+  $("todoCount").textContent = t;
+  if (view === "plan") renderPlan();
+  else if (view === "shop") renderShop();
+  else renderTodo();
 }
 
 function renderPlan() {
@@ -273,6 +294,21 @@ document.addEventListener("click", e => {
 
   if (t.id === "tabPlan") { view = "plan"; editing = false; }
   else if (t.id === "tabShop") { view = "shop"; editing = false; }
+  else if (t.id === "tabTodo") { view = "todo"; editing = false; }
+  else if (t.id === "btnTodoAdd") { editTodo(null); return; }
+  else if (t.id === "btnTodoClean") {
+    if (!confirm("Erledigte Aufgaben endgültig entfernen?")) return;
+    state.todos = state.todos.filter(x => !x.done);
+  }
+  else if (e.target.closest("[data-todo-check]")) {
+    const x = state.todos.find(x => x.id === e.target.closest("[data-todo-check]").dataset.todoCheck);
+    if (!x) return;
+    completeTodo(x);
+  }
+  else if (e.target.closest("[data-todo-edit]")) {
+    editTodo(state.todos.find(x => x.id === e.target.closest("[data-todo-edit]").dataset.todoEdit));
+    return;
+  }
   else if (t.id === "btnEdit") { editing = !editing; }
   else if (t.id === "btnClear") {
     if (!confirm("Alle Artikel abwählen?")) return;
@@ -316,7 +352,7 @@ document.addEventListener("click", e => {
 
   save();
   render();
-  if (t.id === "tabPlan" || t.id === "tabShop") scrollTo(0, 0);
+  if (t.id.startsWith("tab")) scrollTo(0, 0);
 });
 
 async function share() {
@@ -330,6 +366,120 @@ async function share() {
     if (navigator.share) await navigator.share({ title: "Einkaufsliste", text });
     else { await navigator.clipboard.writeText(text); alert("Liste in die Zwischenablage kopiert."); }
   } catch (e) {}
+}
+
+// ---- Aufgaben ----
+const REPEATS = [["", "Einmalig"], ["7d", "Wöchentlich"], ["14d", "Alle 2 Wochen"], ["1m", "Monatlich"],
+                 ["3m", "Vierteljährlich"], ["6m", "Halbjährlich"], ["12m", "Jährlich"]];
+const repeatLabel = r => (REPEATS.find(x => x[0] === r) || REPEATS[0])[1];
+
+const pad = n => String(n).padStart(2, "0");
+const isoDate = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parseDate = s => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+const today = () => isoDate(new Date());
+const daysUntil = s => Math.round((parseDate(s) - parseDate(today())) / 864e5);
+
+function addRepeat(s, r) {
+  const d = parseDate(s);
+  const n = parseInt(r, 10);
+  if (r.endsWith("d")) d.setDate(d.getDate() + n);
+  else {
+    const day = d.getDate();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + n);
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    d.setDate(Math.min(day, last));
+  }
+  return isoDate(d);
+}
+
+const todosDue = () => state.todos.filter(x => !x.done && x.due && daysUntil(x.due) <= 0).length;
+
+function dueText(x) {
+  if (!x.due) return ["", ""];
+  const n = daysUntil(x.due);
+  const date = parseDate(x.due).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" });
+  if (n < 0) return [`Überfällig seit ${-n} ${-n === 1 ? "Tag" : "Tagen"} (${date})`, "late"];
+  if (n === 0) return ["Heute fällig", "late"];
+  if (n === 1) return ["Morgen fällig", "soon"];
+  if (n <= 7) return [`In ${n} Tagen (${date})`, "soon"];
+  return [date, ""];
+}
+
+function completeTodo(x) {
+  if (x.done) { x.done = false; return; }
+  if (x.repeat) {
+    x.due = addRepeat(x.due || today(), x.repeat);
+  } else {
+    x.done = true;
+  }
+}
+
+function renderTodo() {
+  const open = state.todos.filter(x => !x.done).sort((a, b) =>
+    (a.due || "9999") < (b.due || "9999") ? -1 : (a.due || "9999") > (b.due || "9999") ? 1 : 0);
+  const done = state.todos.filter(x => x.done);
+
+  const item = x => {
+    const [txt, cls] = dueText(x);
+    const meta = [txt, x.repeat ? "↻ " + repeatLabel(x.repeat) : ""].filter(Boolean).join(" · ");
+    return `<li class="${x.done ? "done" : ""}">
+      <span class="box" data-todo-check="${x.id}"></span>
+      <span class="txt" data-todo-edit="${x.id}">${esc(x.text)}${meta && !x.done ? `<span class="meta ${cls}">${meta}</span>` : ""}</span>
+    </li>`;
+  };
+
+  let html = "";
+  if (!state.todos.length) {
+    html = `<div class="empty">Noch keine Aufgaben.<br>Tippe auf <b>Neue Aufgabe</b>, z. B. „Jalousie erneuern“ oder „Beratungstermin Pflegekasse“ (halbjährlich).</div>`;
+  } else {
+    html += `<p class="hint">Kreis antippen = erledigt. Text antippen = bearbeiten. Wiederkehrende Aufgaben springen beim Abhaken auf den nächsten Termin.</p>`;
+    if (open.length) html += `<section class="cat"><ul class="shop todo">${open.map(item).join("")}</ul></section>`;
+    if (done.length) html += `<section class="cat complete"><h2>Erledigt</h2><ul class="shop todo">${done.map(item).join("")}</ul></section>`;
+  }
+  $("main").innerHTML = html;
+  $("footer").innerHTML =
+    (done.length ? `<button id="btnTodoClean">Aufräumen</button>` : "") +
+    `<button id="btnTodoAdd" class="primary">Neue Aufgabe</button>`;
+}
+
+function editTodo(x) {
+  let repeat = x ? x.repeat || "" : "";
+  openSheet(`<h3>${x ? "Aufgabe bearbeiten" : "Neue Aufgabe"}</h3>
+    <label for="todoText">Was ist zu tun?</label>
+    <input id="todoText" value="${x ? esc(x.text) : ""}" placeholder="z. B. Jalousie erneuern" autocomplete="off">
+    <label for="todoDue">Fällig am (optional)</label>
+    <input id="todoDue" type="date" value="${x ? x.due || "" : ""}">
+    <label>Wiederholen</label>
+    <div class="chips" id="repeatChoice">${REPEATS.map(([v, l]) =>
+      `<button class="chip ${v === repeat ? "on" : ""}" data-repeat="${v}">${l}</button>`).join("")}</div>
+    <div class="row">
+      ${x ? `<button id="todoDel">Löschen</button>` : `<button id="todoCancel">Abbrechen</button>`}
+      <button id="todoSave" class="primary">Speichern</button>
+    </div>`);
+
+  $("repeatChoice").onclick = e => {
+    const b = e.target.closest("[data-repeat]");
+    if (!b) return;
+    repeat = b.dataset.repeat;
+    $("repeatChoice").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b));
+  };
+  if ($("todoCancel")) $("todoCancel").onclick = closeSheet;
+  if ($("todoDel")) $("todoDel").onclick = () => {
+    if (!confirm(`„${x.text}“ löschen?`)) return;
+    state.todos = state.todos.filter(t => t !== x);
+    save(); render(); closeSheet();
+  };
+  $("todoSave").onclick = () => {
+    const text = $("todoText").value.trim();
+    if (!text) { $("todoText").focus(); return; }
+    let due = $("todoDue").value;
+    if (repeat && !due) due = today();
+    if (x) Object.assign(x, { text, due, repeat });
+    else state.todos.push({ id: newId(), text, due, repeat, done: false });
+    save(); render(); closeSheet();
+  };
+  if (!x) $("todoText").focus();
 }
 
 // ---- Barcode-Scanner ----
