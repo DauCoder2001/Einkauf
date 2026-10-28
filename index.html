@@ -104,6 +104,12 @@
   ul.todo .meta { display: block; font-size: 14px; color: var(--muted); text-decoration: none; }
   ul.todo .meta.late { color: var(--accent); font-weight: 600; }
   ul.todo .meta.soon { color: var(--text); font-weight: 600; }
+  ul.todo .edit {
+    flex: none; border: 0; background: var(--chip); color: var(--muted);
+    width: 36px; height: 36px; border-radius: 50%; margin: -5px 0 -5px 4px;
+    display: grid; place-items: center; text-decoration: none;
+  }
+  ul.todo .edit svg { width: 18px; height: 18px; }
 
   .empty { text-align: center; color: var(--muted); padding: 48px 16px; }
   .progress { height: 6px; background: var(--chip); border-radius: 3px; overflow: hidden; margin: 2px 0 14px; }
@@ -426,6 +432,7 @@ function renderTodo() {
     return `<li class="${x.done ? "done" : ""}">
       <span class="box" data-todo-check="${x.id}"></span>
       <span class="txt" data-todo-edit="${x.id}">${esc(x.text)}${meta && !x.done ? `<span class="meta ${cls}">${meta}</span>` : ""}</span>
+      <button class="edit" data-todo-edit="${x.id}" aria-label="Bearbeiten"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
     </li>`;
   };
 
@@ -433,7 +440,7 @@ function renderTodo() {
   if (!state.todos.length) {
     html = `<div class="empty">Noch keine Aufgaben.<br>Tippe auf <b>Neue Aufgabe</b>, z. B. „Jalousie erneuern“ oder „Beratungstermin Pflegekasse“ (halbjährlich).</div>`;
   } else {
-    html += `<p class="hint">Kreis antippen = erledigt. Text antippen = bearbeiten. Wiederkehrende Aufgaben springen beim Abhaken auf den nächsten Termin.</p>`;
+    html += `<p class="hint">Kreis antippen = erledigt (nochmal antippen = zurückholen). Stift = bearbeiten. Wiederkehrende Aufgaben springen beim Abhaken auf den nächsten Termin.</p>`;
     if (open.length) html += `<section class="cat"><ul class="shop todo">${open.map(item).join("")}</ul></section>`;
     if (done.length) html += `<section class="cat complete"><h2>Erledigt</h2><ul class="shop todo">${done.map(item).join("")}</ul></section>`;
   }
