@@ -217,11 +217,27 @@ function load() {
     const s = JSON.parse(localStorage.getItem(KEY));
     if (s && Array.isArray(s.cats)) {
       if (!Array.isArray(s.todos)) s.todos = [];
+      mergeDuplicates(s);
       return s;
     }
   } catch (e) {}
   return fresh();
 }
+// Bereits doppelt vorhandene Artikel zusammenführen (der erste bleibt).
+function mergeDuplicates(s) {
+  const seen = new Map();
+  for (const c of s.cats) {
+    c.items = c.items.filter(i => {
+      const key = i.name.trim().replace(/\s+/g, " ").toLowerCase();
+      const first = seen.get(key);
+      if (!first) { seen.set(key, i); return true; }
+      if (i.need && !first.need) { first.need = true; first.done = i.done; }
+      if (i.code && !first.code) first.code = i.code;
+      return false;
+    });
+  }
+}
+
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
 }
@@ -240,6 +256,22 @@ function findItem(id) {
     if (i) return [c, i];
   }
   return [];
+}
+
+const norm = s => s.trim().replace(/\s+/g, " ").toLowerCase();
+function findByName(name) {
+  for (const c of state.cats) {
+    const i = c.items.find(i => norm(i.name) === norm(name));
+    if (i) return [c, i];
+  }
+  return [];
+}
+// Gibt es den Artikel schon, wird er nur auf die Liste gesetzt statt doppelt angelegt.
+function markExisting(c, i, code) {
+  if (code && !i.code) i.code = code;
+  i.need = true;
+  i.done = false;
+  alert(`„${i.name}“ gibt es schon unter ${state.cats.indexOf(c) + 1}. ${c.name} – steht jetzt auf der Liste.`);
 }
 
 function render() {
@@ -367,7 +399,9 @@ document.addEventListener("click", e => {
     const c = state.cats.find(c => c.id === t.dataset.add);
     const name = (prompt(`Neuer Artikel für „${c.name}“:`) || "").trim();
     if (!name) return;
-    c.items.push({ id: newId(), name, need: true, done: false });
+    const [dc, di] = findByName(name);
+    if (di) markExisting(dc, di);
+    else c.items.push({ id: newId(), name, need: true, done: false });
   }
   else if (t.id === "btnLock") { state.locked = !state.locked; }
   else if (t.dataset.check) {
@@ -622,7 +656,10 @@ function askDetails(code, name) {
   $("cancel").onclick = closeSheet;
   $("add").onclick = () => {
     const c = state.cats.find(c => c.id === catId);
-    c.items.push({ id: newId(), name: $("newName").value.trim(), code, need: true, done: false });
+    const name = $("newName").value.trim();
+    const [dc, di] = findByName(name);
+    if (di) markExisting(dc, di, code);
+    else c.items.push({ id: newId(), name, code, need: true, done: false });
     save(); render();
     closeSheet();
   };
