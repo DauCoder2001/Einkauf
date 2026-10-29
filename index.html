@@ -129,6 +129,18 @@
   footer button.primary { background: var(--accent); color: #fff; }
   footer button:disabled { opacity: .4; }
 
+  footer button.lock { flex: none; width: 56px; display: grid; place-items: center; padding: 0; }
+  footer button.lock svg { width: 24px; height: 24px; }
+  footer button.lock.on { background: var(--text); color: var(--bg); }
+  .lockbar {
+    display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 10px 14px;
+    border-radius: 12px; background: var(--text); color: var(--bg); font-size: 15px; font-weight: 600;
+  }
+  .lockbar svg { width: 18px; height: 18px; flex: none; }
+  .locked ul.shop li { cursor: default; }
+  .shake { animation: shake .3s; }
+  @keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+
   .overlay {
     position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.55);
     display: flex; align-items: flex-end; justify-content: center;
@@ -269,8 +281,12 @@ function renderPlan() {
        <button id="btnClear" ${any ? "" : "disabled"}>Abwählen</button>`;
 }
 
+const ICON_LOCK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`;
+const ICON_UNLOCK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg>`;
+
 function renderShop() {
   const list = needed();
+  const locked = !!state.locked;
   if (!list.length) {
     $("main").innerHTML = `<div class="empty">Noch nichts ausgewählt.<br>Wechsle zu <b>Planen</b> und tippe die benötigten Sachen an.</div>`;
     $("footer").innerHTML = "";
@@ -278,6 +294,8 @@ function renderShop() {
   }
   const done = list.filter(i => i.done).length;
   let html = `<div class="progress"><div style="width:${(done / list.length) * 100}%"></div></div>`;
+  if (locked) html += `<div class="lockbar" id="lockbar">${ICON_LOCK}Gesperrt – zum Abhaken unten entsperren</div>`;
+  html += `<div class="${locked ? "locked" : ""}">`;
   state.cats.forEach((c, idx) => {
     const items = c.items.filter(i => i.need);
     if (!items.length) return;
@@ -288,10 +306,12 @@ function renderShop() {
     }
     html += `</ul></section>`;
   });
+  html += `</div>`;
   $("main").innerHTML = html;
   $("footer").innerHTML =
-    `<button id="btnShare">Teilen</button>
-     <button id="btnFinish" class="primary" ${done ? "" : "disabled"}>Abschließen</button>`;
+    `<button id="btnLock" class="lock ${locked ? "on" : ""}" aria-label="${locked ? "Entsperren" : "Sperren"}">${locked ? ICON_LOCK : ICON_UNLOCK}</button>
+     <button id="btnShare">Teilen</button>
+     <button id="btnFinish" class="primary" ${done && !locked ? "" : "disabled"}>Abschließen</button>`;
 }
 
 document.addEventListener("click", e => {
@@ -349,7 +369,15 @@ document.addEventListener("click", e => {
     if (!name) return;
     c.items.push({ id: newId(), name, need: true, done: false });
   }
+  else if (t.id === "btnLock") { state.locked = !state.locked; }
   else if (t.dataset.check) {
+    if (state.locked) {
+      const bar = $("lockbar");
+      bar.classList.remove("shake");
+      void bar.offsetWidth;
+      bar.classList.add("shake");
+      return;
+    }
     const [, i] = findItem(t.dataset.check);
     if (!i) return;
     i.done = !i.done;
