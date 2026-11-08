@@ -141,6 +141,8 @@
   .shake { animation: shake .3s; }
   @keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
 
+  #version { text-align: center; color: var(--muted); font-size: 12px; padding: 4px 16px; }
+
   .overlay {
     position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.55);
     display: flex; align-items: flex-end; justify-content: center;
@@ -179,10 +181,12 @@
   </div>
 </header>
 <main id="main"></main>
+<div id="version"></div>
 <footer id="footer"></footer>
 <div class="overlay" id="overlay" hidden><div class="sheet" id="sheet"></div></div>
 
 <script>
+const VERSION = "1.5.1";
 const KEY = "einkauf-rewe-v1";
 
 // Reihenfolge im Laden – hier Kategorien und Startartikel anpassen
@@ -343,7 +347,7 @@ function renderShop() {
   $("footer").innerHTML =
     `<button id="btnLock" class="lock ${locked ? "on" : ""}" aria-label="${locked ? "Entsperren" : "Sperren"}">${locked ? ICON_LOCK : ICON_UNLOCK}</button>
      <button id="btnShare">Teilen</button>
-     <button id="btnFinish" class="primary" ${done && !locked ? "" : "disabled"}>Abschließen</button>`;
+     <button id="btnFinish" class="primary" ${done === list.length && !locked ? "" : "disabled"}>Abschließen</button>`;
 }
 
 document.addEventListener("click", e => {
@@ -373,13 +377,9 @@ document.addEventListener("click", e => {
     needed().forEach(i => { i.need = false; i.done = false; });
   }
   else if (t.id === "btnFinish") {
-    const open = needed().filter(i => !i.done).length;
-    const msg = open
-      ? `Eingekaufte Artikel von der Liste nehmen? ${open} nicht abgehakte Artikel bleiben stehen.`
-      : "Einkauf abschließen und Liste leeren?";
-    if (!confirm(msg)) return;
-    needed().forEach(i => { if (i.done) { i.need = false; i.done = false; } });
-    if (!needed().length) view = "plan";
+    if (!confirm("Einkauf abschließen und Liste leeren?")) return;
+    needed().forEach(i => { i.need = false; i.done = false; });
+    view = "plan";
   }
   else if (t.id === "btnShare") { share(); return; }
   else if (t.id === "btnScan") { startScan(); return; }
@@ -666,6 +666,7 @@ function askDetails(code, name) {
   if (!name) $("newName").focus();
 }
 
+$("version").textContent = "Version " + VERSION;
 render();
 </script>
 </body>
